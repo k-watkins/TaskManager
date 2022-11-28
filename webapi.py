@@ -1,45 +1,51 @@
-import datetime
-
-from flask import Flask, render_template
-from flask_restful import Api, Resource, reqparse, abort, fields, marshal_with
+from datetime import datetime
+from forms import RegistrationForm, LoginForm, AddTask
+from flask import Flask, render_template, url_for, flash, redirect, request
+from flask_restful import Api, reqparse
 from flask_sqlalchemy import SQLAlchemy
-import flask_mysqldb
+from flask_bcrypt import Bcrypt
 
 # from views import views
 
 
 app = Flask(__name__)
 api = Api(app)
+app.config['SECRET_KEY'] = '98da64f0467c51ae07c26964ea2993d8'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///taskMgr.db'
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:password123@localhost:3307/task_manager'
 db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
 
 
 # app.register_blueprint(views, url_prefix="/")
+class User(db.Model):
+    user_id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(20), nullable=False, unique=True)
+    email = db.Column(db.String(100), nullable=False, unique=True)
+    password = db.Column(db.String(60), nullable=False)
+    tasks = db.relationship('TaskModel', backref='task', lazy=True)
+
+    def __repr__(self):
+        return f"User('{self.username}, {self.email}')"
 
 
+#  each class will be a separate table
 class TaskModel(db.Model):
     task_id = db.Column(db.Integer, primary_key=True)
     task_name = db.Column(db.String(100), nullable=False)
     task_description = db.Column(db.String(100), nullable=False)
-    task_due_date = db.Column(db.Date(), nullable=False)
+    task_due_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
 
     def __repr__(self):
-        return f"Task(Task Name = {self.task_name}, Task Description = {self.task_description} " \
+        return f"Task(Task id = {self.task_id}, Task Name = {self.task_name}, " \
+               f"Task Description = {self.task_description} " \
                f"Task Due date = {self.task_due_date}"
-
-    def __init__(self, id, name, desc, due):
-        self.task_id = id
-        self.task_name = name
-        self.task_description = desc
-        self.task_due_date = due
 
 
 task_put_args = reqparse.RequestParser()
 task_post_args = reqparse.RequestParser()
 
-with app.app_context():
-    db.create_all()
 
 task_post_args.add_argument("Taskname", type=str, help="Taskname is required", required=True)
 task_post_args.add_argument("Description", type=str, help="Description is required", required=True)
@@ -51,12 +57,61 @@ task_put_args.add_argument("date", type=str, help="date is required", required=T
 
 
 @app.route('/')
-def users():
-    user = db.session.execute(db.select(TaskModel).order_by(TaskModel.task_id)).scalars()
-    for i in user:
-        return render_template("index.html", data=i)
+def task_data():
+    task_get_data = TaskModel.query.all()
+    return render_template("index.html", data=task_get_data)
 
 
+@app.route('/addtask', methods=['GET', 'POST'])
+def add_task():
+    add = AddTask()
+    if request.method == "POST":
+        task = TaskModel(
+            task_name=request.form['name'],
+            task_description=request.form['description'],
+            user_id=1
+        )
+        db.session.add(task)
+        db.session.commit()
+        return redirect(url_for('task_data'))
+    return render_template("addtask.html", form=add)
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        hash_password = bcrypt.generate_password_hash(form.pass_conf.data).decode('utf-8')
+        if request.method == 'POST':
+            user = User(
+                username=request.form['username'],
+                email=request.form['email'],
+                password=hash_password
+            )
+            db.session.add(user)
+            db.session.commit()
+            flash(f'Account created for {form.username.data}', 'success')
+
+        return redirect(url_for('login'))
+    return render_template("signup.html", title="Sign-up", form=form)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    logged_in = False
+    if form.validate_on_submit():
+        if form.email.data == 'admin@blog.com' and form.password.data == 'password':
+            flash('You have been logged in!', 'success')
+            logged_in = True
+            return redirect(url_for('task_data'))
+        else:
+            flash('Login Unsuccessful. Please check username and password', 'danger')
+    return render_template("login.html", title="Login", form=form)
+
+
+def delete():
+    pass
 
 
 """
@@ -88,7 +143,9 @@ resource_fields = {
     'description': fields.String
 }
 
-
+with app.app_context():
+    db.create_all()
+    
 class Task(Resource):
     @marshal_with(resource_fields)
     def get(self):
