@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>Task Dashboard</h2>
+    <table class="table">
+        <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Task Name</th>
+            <th scope="col">Task Description</th>
+            <th scope="col">Due date</th>
+            <th scope="col">Commands</th>
+        </tr>
+        {% for i in data %}
+        <tr>
+            <td>{{ i.task_id }}</td>
+            <td>{{ i.task_name }}</td>
+            <td>{{ i.task_description }}</td>
+            <td>{{ i.task_due_date }}</td>
+            <td><a href=url_for('delete')>Delete</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+    <a href="addtask">add task</a>
+{% endblock content %}
